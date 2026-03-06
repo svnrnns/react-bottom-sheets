@@ -1,11 +1,11 @@
-# @svnrnns/bottom-sheets
+# @svnrnns/react-bottom-sheets
 
 Imperative bottom sheets for React: open and close sheets via API, with gestures, snap points, and stacking. Compatible with React 18+ and Next.js.
 
 ## Installation
 
 ```bash
-npm install @svnrnns/bottom-sheets
+npm install @svnrnns/react-bottom-sheets
 ```
 
 ## Setup
@@ -13,8 +13,8 @@ npm install @svnrnns/bottom-sheets
 Wrap your app with `BottomSheetRoot` (e.g. in `_app.tsx` or the root layout):
 
 ```tsx
-import { BottomSheetRoot } from '@svnrnns/bottom-sheets';
-import '@svnrnns/bottom-sheets/styles.css';
+import { BottomSheetRoot } from "@svnrnns/react-bottom-sheets";
+import "@svnrnns/react-bottom-sheets/styles.css";
 
 export default function App({ Component, pageProps }) {
   return (
@@ -27,8 +27,8 @@ export default function App({ Component, pageProps }) {
 
 **`BottomSheetRoot` props:**
 
-| Prop | Type | Description |
-|------|------|-------------|
+| Prop    | Type     | Description                                                                                                        |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
 | `width` | `string` | Default width for all bottom sheets (e.g. `'50%'`, `'20rem'`, `'400px'`). When set, sheets are centered. Optional. |
 
 ## Usage
@@ -36,7 +36,7 @@ export default function App({ Component, pageProps }) {
 ### Opening a bottom sheet
 
 ```tsx
-import { pushBottomSheet } from '@svnrnns/bottom-sheets';
+import { pushBottomSheet } from "@svnrnns/react-bottom-sheets";
 
 function MyContent({ title, closeDrawer, snapToIndex }) {
   return (
@@ -51,10 +51,10 @@ function MyContent({ title, closeDrawer, snapToIndex }) {
 
 const instance = pushBottomSheet({
   component: MyContent,
-  props: { title: 'Hello' },
+  props: { title: "Hello" },
   enableBackdrop: true,
   enableClickBackdropToClose: true,
-  snapPoint: ['50%', '100%'],
+  snapPoint: ["50%", "100%"],
 });
 
 instance.close();
@@ -101,23 +101,23 @@ Every component rendered inside a bottom sheet receives:
 
 Override these in your app (e.g. in `:root` or a wrapper) to customize styles:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `--bottom-sheet-bg` | `#fff` | Sheet background |
-| `--bottom-sheet-padding` | `1rem` | Inner padding |
-| `--bottom-sheet-border-radius` | `12px 12px 0 0` | Sheet corners |
-| `--bottom-sheet-shadow` | `0 25px 50px -12px rgb(0 0 0 / 0.25)` | Box shadow |
-| `--bottom-sheet-overlay-bg` | `rgba(0, 0, 0, 0.3)` | Backdrop color |
-| `--bottom-sheet-overlay-blur-filter` | `blur(8px)` | Backdrop blur |
-| `--bottom-sheet-duration` | `0.5s` | Duration for programmatic animations |
-| `--bottom-sheet-easing` | `cubic-bezier(0.32, 0.72, 0, 1)` | Easing for programmatic animations |
-| `--bottom-sheet-handler-bg` | `#cbd5e1` | Handler bar color |
-| `--bottom-sheet-handler-width` | `40px` | Handler bar width |
-| `--bottom-sheet-handler-height` | `4px` | Handler bar height |
-| `--bottom-sheet-handler-border-radius` | `2px` | Handler bar radius |
-| `--bottom-sheet-handler-padding` | `0.5rem` | Handler padding |
-| `--bottom-sheet-gap` | `0.5rem` | Gap between handler and content |
-| `--bottom-sheet-close-extra-offset` | `0` | Extra offset when animating to closed |
+| Variable                               | Default                               | Description                           |
+| -------------------------------------- | ------------------------------------- | ------------------------------------- |
+| `--bottom-sheet-bg`                    | `#fff`                                | Sheet background                      |
+| `--bottom-sheet-padding`               | `1rem`                                | Inner padding                         |
+| `--bottom-sheet-border-radius`         | `12px 12px 0 0`                       | Sheet corners                         |
+| `--bottom-sheet-shadow`                | `0 25px 50px -12px rgb(0 0 0 / 0.25)` | Box shadow                            |
+| `--bottom-sheet-overlay-bg`            | `rgba(0, 0, 0, 0.3)`                  | Backdrop color                        |
+| `--bottom-sheet-overlay-blur-filter`   | `blur(8px)`                           | Backdrop blur                         |
+| `--bottom-sheet-duration`              | `0.5s`                                | Duration for programmatic animations  |
+| `--bottom-sheet-easing`                | `cubic-bezier(0.32, 0.72, 0, 1)`      | Easing for programmatic animations    |
+| `--bottom-sheet-handler-bg`            | `#cbd5e1`                             | Handler bar color                     |
+| `--bottom-sheet-handler-width`         | `40px`                                | Handler bar width                     |
+| `--bottom-sheet-handler-height`        | `4px`                                 | Handler bar height                    |
+| `--bottom-sheet-handler-border-radius` | `2px`                                 | Handler bar radius                    |
+| `--bottom-sheet-handler-padding`       | `0.5rem`                              | Handler padding                       |
+| `--bottom-sheet-gap`                   | `0.5rem`                              | Gap between handler and content       |
+| `--bottom-sheet-close-extra-offset`    | `0`                                   | Extra offset when animating to closed |
 
 Example:
 
