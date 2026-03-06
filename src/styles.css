@@ -1,0 +1,67 @@
+:root {
+  --bottom-sheet-bg: #fff;
+  --bottom-sheet-padding: 1rem;
+  --bottom-sheet-border-radius: 12px 12px 0 0;
+  --bottom-sheet-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --bottom-sheet-shadow: none;
+  --bottom-sheet-overlay-bg: rgba(0, 0, 0, 0.3);
+  --bottom-sheet-overlay-blur-filter: blur(8px);
+  --bottom-sheet-duration: 0.5s;
+  --bottom-sheet-easing: cubic-bezier(0.32, 0.72, 0, 1);
+  --bottom-sheet-handler-bg: #cbd5e1;
+  --bottom-sheet-handler-width: 40px;
+  --bottom-sheet-handler-height: 4px;
+  --bottom-sheet-handler-border-radius: 2px;
+  --bottom-sheet-handler-padding: 0rem 0rem 0.5rem 0rem;
+  --bottom-sheet-gap: 0.5rem;
+  --bottom-sheet-close-extra-offset: 0;
+}
+
+.bottom-sheets-portal {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.bottom-sheets-portal>* {
+  pointer-events: auto;
+}
+
+.bottom-sheet-overlay {
+  pointer-events: auto;
+}
+
+.bottom-sheet {
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.bottom-sheet.dragging {
+  cursor: grabbing;
+}
+
+.bottom-sheet::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 99%;
+  width: 100%;
+  height: calc(2 * var(--bottom-sheet-height, 0px));
+  background: var(--bottom-sheet-bg);
+  pointer-events: none;
+}
+
+.bottom-sheet-handler {
+  touch-action: none;
+}
+
+.bottom-sheet-handler:active {
+  cursor: inherit;
+}
+
+.bottom-sheet-content {
+  touch-action: pan-y;
+}
