@@ -97,6 +97,36 @@ Every component rendered inside a bottom sheet receives:
 - **`closeDrawer()`** — Closes this sheet.
 - **`snapToIndex(index: number)`** — Snaps this sheet to the given index.
 
+### Scrollable content (`BottomSheetScrollable`)
+
+When the sheet content is scrollable, vertical drags can conflict with sheet gestures. Use `BottomSheetScrollable` so scroll and gestures cooperate:
+
+- **Scroll not at top (`scrollTop > 0`):** Vertical drags scroll the content only; sheet gestures are disabled.
+- **Scroll at top (`scrollTop === 0`):** Swipe down activates sheet gestures (close or pan); swipe up scrolls the content.
+
+```tsx
+import { pushBottomSheet, BottomSheetScrollable } from "@svnrnns/react-bottom-sheets";
+
+function MyContent({ closeDrawer }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <h2>Header</h2>
+      <BottomSheetScrollable>
+        <p>Long scrollable content...</p>
+      </BottomSheetScrollable>
+    </div>
+  );
+}
+
+pushBottomSheet({
+  component: MyContent,
+  snapPoint: ["50%", "100%"],
+  enableBackdrop: true,
+});
+```
+
+`BottomSheetScrollable` supports `className` and `style` props. It must be used inside a bottom sheet; outside it behaves as a normal scroll container.
+
 ## CSS variables
 
 Override these in your app (e.g. in `:root` or a wrapper) to customize styles:
@@ -118,6 +148,7 @@ Override these in your app (e.g. in `:root` or a wrapper) to customize styles:
 | `--bottom-sheet-handler-padding`       | `0.5rem`                              | Handler padding                       |
 | `--bottom-sheet-gap`                   | `0.5rem`                              | Gap between handler and content       |
 | `--bottom-sheet-close-extra-offset`    | `0`                                   | Extra offset when animating to closed |
+| `--bottom-sheet-stack-overlay-bg`      | `rgba(0, 0, 0, 0.5)`                  | Overlay on non-top stacked sheets     |
 
 Example:
 
@@ -132,12 +163,16 @@ Example:
 ## Behavior
 
 - Sheets open from the bottom and are rendered in a portal above the rest of the page.
-- **Stacking:** Multiple sheets can be open at once. Only the topmost sheet receives backdrop click (when `enableClickBackdropToClose` is true) and Escape. `popBottomSheet()` closes the top sheet; `closeBottomSheet(id)` closes a specific one.
+- **Stacking:** Multiple sheets can be open at once. When a new sheet is pushed, all sheets behind it (non-top) get scaled to 90%, translated up by 10%, and display an overlay. Customize the overlay via `--bottom-sheet-stack-overlay-bg`. Only the topmost sheet receives backdrop click (when `enableClickBackdropToClose` is true) and Escape. `popBottomSheet()` closes the top sheet; `closeBottomSheet(id)` closes a specific one.
 - Height is content-based (max 100vh) unless `height` is set. Snap points can be `%`, `px`, or `rem`.
 - Drag with mouse or touch: the sheet follows in real time (no animation during drag). On release, it snaps or closes using the configured duration and easing.
 - Fast swipe down can close the sheet; past 60% travel toward closed also allows close. Use `disableSwipeDownToClose: true` to prevent swipe-to-close. Between snap points, 50% progress decides the target snap.
 - Rubberband effect when dragging beyond min/max (unless moving to another snap point).
 - Escape closes the top sheet (including while dragging). Each sheet can disable this with `disableEsc`.
+
+### Accessibility (focus trap)
+
+When a bottom sheet is pushed and becomes the top sheet, focus is trapped inside it: Tab/Shift+Tab cycle only through focusable elements within the sheet, and focus is restored to the previously focused element when the sheet closes. The first focusable element is focused when the sheet opens. To avoid auto-focus on a close button, add the class `modals-close` to that button; the trap will then focus the first other focusable element (or the sheet container if none). The top sheet is exposed as a dialog (`role="dialog"`, `aria-modal="true"`) for screen readers.
 
 ## TypeScript
 

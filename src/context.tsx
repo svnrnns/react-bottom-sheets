@@ -13,8 +13,10 @@ import { BottomSheet } from './BottomSheet';
 export const BottomSheetContext = createContext<{
   registerController: (id: symbol | string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => void;
   unregisterController: (id: symbol | string) => void;
-  defaultWidth?: string;
-  setOverlayStyle: (style: { opacity: number; transition: string }) => void;
+  defaultWidth?: string | number;
+  setOverlayStyle: (style: { opacity: number; transition: string; pointerEvents?: 'auto' | 'none' }) => void;
+  topSheetClosingProgress: number | null;
+  setTopSheetClosingProgress: (progress: number | null) => void;
 } | null>(null);
 
 function useSheets(): ReadonlyArray<SheetDescriptor & { id: symbol }> {
@@ -22,13 +24,18 @@ function useSheets(): ReadonlyArray<SheetDescriptor & { id: symbol }> {
 }
 
 export interface BottomSheetRootProps {
-  /** Default width for all bottom sheets (e.g. '50%', '20rem', '400px'). When set, sheets are centered. */
-  width?: string;
+  /** Default width for all bottom sheets (e.g. '50%', '20rem', 400). Number = px. When set, sheets are centered. */
+  width?: string | number;
 }
 
 export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
   const sheets = useSheets();
-  const [overlayStyle, setOverlayStyle] = useState({ opacity: 0, transition: 'opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1)' });
+  const [topSheetClosingProgress, setTopSheetClosingProgress] = useState<number | null>(null);
+  const [overlayStyle, setOverlayStyle] = useState<{
+    opacity: number;
+    transition: string;
+    pointerEvents: 'auto' | 'none';
+  }>({ opacity: 0, transition: 'opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: 'none' });
 
   const registerController = useCallback(
     (id: symbol | string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => {
@@ -47,7 +54,7 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
   if (!hasContent) return null;
 
   return (
-    <BottomSheetContext.Provider value={{ registerController, unregisterController, defaultWidth: width, setOverlayStyle }}>
+    <BottomSheetContext.Provider value={{ registerController, unregisterController, defaultWidth: width, setOverlayStyle, topSheetClosingProgress, setTopSheetClosingProgress }}>
       {createPortal(
         <div className="bottom-sheets-portal" aria-hidden="false">
           {sheets.length > 0 && (
@@ -59,7 +66,7 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
                 background: 'var(--bottom-sheet-overlay-bg)',
                 backdropFilter: 'var(--bottom-sheet-overlay-blur-filter)',
                 zIndex: 0,
-                pointerEvents: 'auto',
+                pointerEvents: overlayStyle.pointerEvents ?? 'none',
                 opacity: overlayStyle.opacity,
                 transition: overlayStyle.transition,
               }}
@@ -78,6 +85,7 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
               descriptor={descriptor}
               index={index}
               isTop={index === sheets.length - 1}
+              stackDepth={sheets.length - 1 - index}
             />
           ))}
         </div>,

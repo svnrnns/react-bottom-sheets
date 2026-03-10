@@ -12,8 +12,11 @@ import { parseSnapPoints, rubberband } from './snap';
 import { getReleaseTarget } from './gestures';
 import { removeSheet } from './store';
 import { BottomSheetContext } from './context';
+import { ScrollContainerContext, useScrollContainerContextValue } from './scrollContext';
+import { useFocusTrap } from './useFocusTrap';
 
 const VIEWPORT_MAX = typeof window !== 'undefined' ? () => window.innerHeight : () => 800;
+const DRAG_THRESHOLD = 5;
 
 function getCssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback;
@@ -30,13 +33,37 @@ function getDurationMs(): number {
   return 500;
 }
 
+function getEaseCubicBezierY(t: number, y1: number, y2: number): number {
+  const t2 = 1 - t;
+  return 3 * t2 * t2 * t * y1 + 3 * t2 * t * t * y2 + t * t * t;
+}
+
+function getEasedProgress(progress: number, easingVar: string): number {
+  const match = easingVar.match(/cubic-bezier\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/);
+  if (!match) return progress;
+  const values = match.map(Number);
+  const y1 = values[2];
+  const y2 = values[4];
+  return getEaseCubicBezierY(progress, y1, y2);
+}
+
+function scaleForStackDepth(d: number): number {
+  return d === 0 ? 1 : Math.max(0.5, 0.9 - (d - 1) * 0.05);
+}
+
+function offsetForStackDepth(d: number): number {
+  return d === 0 ? 0 : 12 + (d - 1) * 8;
+}
+
 export interface BottomSheetProps {
   descriptor: SheetDescriptor & { id: symbol };
   index: number;
   isTop: boolean;
+  /** 0 = top sheet, 1 = first behind, 2 = second behind, etc. */
+  stackDepth: number;
 }
 
-export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
+export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomSheetProps) {
   const ctx = useContext(BottomSheetContext);
   const {
     id,
@@ -48,12 +75,15 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
     className,
     onClose,
     enableBackdrop,
+    enableClickBackdropToClose,
     disableEsc,
     gestureOnlyOnHandler,
     disableSwipeDownToClose,
   } = descriptor;
 
   const effectiveWidth = widthProp ?? ctx?.defaultWidth;
+  const widthCss =
+    effectiveWidth == null ? undefined : typeof effectiveWidth === 'number' ? `${effectiveWidth}px` : effectiveWidth;
 
   const viewportHeight = VIEWPORT_MAX();
   const closeOffset =
@@ -67,6 +97,7 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const handlerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollCtxValue = useScrollContainerContextValue();
   const [sheetHeight, setSheetHeight] = useState(() => {
     if (heightProp != null) return parseHeight(heightProp);
     if (contentDrivenHeight) return 0;
@@ -88,6 +119,7 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
   const [backdropOpacity, setBackdropOpacity] = useState(0);
   const dragStartRef = useRef<{ y: number; sheetY: number; time: number } | null>(null);
   const lastMoveRef = useRef<{ y: number; time: number } | null>(null);
+  const hasCapturedRef = useRef(false);
   const heightAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
@@ -191,13 +223,32 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
     setIsAnimating(true);
     const duration = getDurationMs();
     setTranslateY(sheetHeight + closeOffset);
-    const t = setTimeout(() => {
-      onClose?.();
-      removeSheet(id);
-      setIsAnimating(false);
-    }, duration);
-    return () => clearTimeout(t);
-  }, [id, sheetHeight, closeOffset, onClose, isAnimating]);
+    if (isTop && ctx) {
+      ctx.setTopSheetClosingProgress(0);
+      const startTime = Date.now();
+      const tick = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        ctx?.setTopSheetClosingProgress(progress);
+        if (progress < 1) {
+          requestAnimationFrame(tick);
+        } else {
+          onClose?.();
+          removeSheet(id);
+          ctx?.setTopSheetClosingProgress(null);
+          setIsAnimating(false);
+        }
+      };
+      requestAnimationFrame(tick);
+    } else {
+      const t = setTimeout(() => {
+        onClose?.();
+        removeSheet(id);
+        setIsAnimating(false);
+      }, duration);
+      return () => clearTimeout(t);
+    }
+  }, [id, sheetHeight, closeOffset, onClose, isAnimating, isTop, ctx]);
 
   const snapToIndex = useCallback(
     (i: number) => {
@@ -252,22 +303,86 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isTop, disableEsc, closeDrawer]);
 
+  useFocusTrap(sheetRef, isTop && hasOpened);
+
+  const cleanupDragState = useCallback((pointerId?: number) => {
+    if (hasCapturedRef.current && sheetRef.current && pointerId != null) {
+      try {
+        sheetRef.current.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore if no capture */
+      }
+      setIsDragging(false);
+    }
+    dragStartRef.current = null;
+    lastMoveRef.current = null;
+    hasCapturedRef.current = false;
+  }, []);
+
+  const handlePointerDownCapture = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      const isTouch = e.pointerType === 'touch';
+      const isInContent = contentRef.current?.contains(e.target as Node) ?? false;
+      if (isTouch && isInContent) {
+        // When inside a scroll container, defer capture until we know swipe direction (see handlePointerMove)
+        if (scrollCtxValue.isInScrollContainer(e.target as Node)) {
+          return;
+        }
+        e.currentTarget.setPointerCapture(e.pointerId);
+        hasCapturedRef.current = true;
+        setIsDragging(true);
+      }
+    },
+    [scrollCtxValue]
+  );
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
-      e.currentTarget.setPointerCapture(e.pointerId);
-      setIsDragging(true);
+      const pointerId = e.pointerId;
       dragStartRef.current = { y: e.clientY, sheetY: translateY, time: Date.now() };
       lastMoveRef.current = { y: e.clientY, time: Date.now() };
+      const onPointerUpGlobal = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        window.removeEventListener('pointerup', onPointerUpGlobal);
+        window.removeEventListener('pointercancel', onPointerUpGlobal);
+        cleanupDragState(pointerId);
+      };
+      window.addEventListener('pointerup', onPointerUpGlobal);
+      window.addEventListener('pointercancel', onPointerUpGlobal);
     },
-    [translateY]
+    [translateY, cleanupDragState]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragStartRef.current) return;
+      if (e.buttons === 0) {
+        if (hasCapturedRef.current) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+          setIsDragging(false);
+        }
+        dragStartRef.current = null;
+        lastMoveRef.current = null;
+        hasCapturedRef.current = false;
+        return;
+      }
       lastMoveRef.current = { y: e.clientY, time: Date.now() };
       const delta = e.clientY - dragStartRef.current.y;
+      const threshold = e.pointerType === 'touch' ? 1 : DRAG_THRESHOLD;
+      if (!hasCapturedRef.current && Math.abs(delta) > threshold) {
+        const target = e.target as Node;
+        if (scrollCtxValue.isInScrollContainer(target)) {
+          if (scrollCtxValue.shouldBlockGestures(target)) return;
+          if (!scrollCtxValue.canCaptureForDownSwipe(target) || delta <= 0) return;
+          e.preventDefault();
+        }
+        e.currentTarget.setPointerCapture(e.pointerId);
+        hasCapturedRef.current = true;
+        setIsDragging(true);
+      }
+      if (!hasCapturedRef.current) return;
       let next = dragStartRef.current.sheetY + delta;
       const min = 0;
       const max = sheetHeight + closeOffset;
@@ -283,14 +398,17 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
       }
       setTranslateY(next);
     },
-    [sheetHeight, closeOffset, effectiveSnaps]
+    [sheetHeight, closeOffset, effectiveSnaps, scrollCtxValue]
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
       if (!dragStartRef.current) return;
-      e.currentTarget.releasePointerCapture(e.pointerId);
-      setIsDragging(false);
+      const didCapture = hasCapturedRef.current;
+      if (didCapture) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        setIsDragging(false);
+      }
       const last = lastMoveRef.current;
       const velocityY =
         last && last.time !== dragStartRef.current.time
@@ -298,6 +416,9 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
           : 0;
       dragStartRef.current = null;
       lastMoveRef.current = null;
+      hasCapturedRef.current = false;
+
+      if (!didCapture) return;
 
       const result = getReleaseTarget(
         translateY,
@@ -320,11 +441,30 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
         setIsAnimating(true);
         setTranslateY(sheetHeight + closeOffset);
         const duration = getDurationMs();
-        setTimeout(() => {
-          onClose?.();
-          removeSheet(id);
-          setIsAnimating(false);
-        }, duration);
+        if (isTop && ctx) {
+          ctx.setTopSheetClosingProgress(0);
+          const startTime = Date.now();
+          const tick = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            ctx?.setTopSheetClosingProgress(progress);
+            if (progress < 1) {
+              requestAnimationFrame(tick);
+            } else {
+              onClose?.();
+              removeSheet(id);
+              ctx?.setTopSheetClosingProgress(null);
+              setIsAnimating(false);
+            }
+          };
+          requestAnimationFrame(tick);
+        } else {
+          setTimeout(() => {
+            onClose?.();
+            removeSheet(id);
+            setIsAnimating(false);
+          }, duration);
+        }
         return;
       }
 
@@ -342,13 +482,19 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
       id,
       onClose,
       disableSwipeDownToClose,
+      isTop,
+      ctx,
     ]
   );
 
-  const handlePointerCancel = useCallback(() => {
+  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
+    if (hasCapturedRef.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      setIsDragging(false);
+    }
     dragStartRef.current = null;
     lastMoveRef.current = null;
-    setIsDragging(false);
+    hasCapturedRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -361,6 +507,7 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
   }, [isDragging]);
 
   const gestureProps = {
+    onPointerDownCapture: handlePointerDownCapture,
     onPointerDown: handlePointerDown,
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
@@ -369,10 +516,24 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
 
   const duration = getCssVar('--bottom-sheet-duration', '0.5s');
   const easing = getCssVar('--bottom-sheet-easing', 'cubic-bezier(0.32, 0.72, 0, 1)');
+  const closingProgress = ctx?.topSheetClosingProgress ?? null;
+  const isRevealingDuringClose = stackDepth >= 1 && closingProgress != null;
+  const easedProgress = isRevealingDuringClose ? getEasedProgress(closingProgress, easing) : 0;
   const transition =
-    isDragging || !isAnimating
+    isDragging || isRevealingDuringClose
       ? 'none'
-      : `transform ${duration} ${easing}, height ${duration} ${easing}`;
+      : `transform ${duration} ${easing}, height ${duration} ${easing}, transform-origin ${duration} ${easing}`;
+
+  const fromScale = scaleForStackDepth(stackDepth);
+  const toScale = scaleForStackDepth(stackDepth - 1);
+  const fromOffset = offsetForStackDepth(stackDepth);
+  const toOffset = offsetForStackDepth(stackDepth - 1);
+  const stackScale = isRevealingDuringClose
+    ? fromScale + (toScale - fromScale) * easedProgress
+    : fromScale;
+  const stackOffsetY = isRevealingDuringClose
+    ? fromOffset + (toOffset - fromOffset) * easedProgress
+    : fromOffset;
 
   const closedYNum = sheetHeight + closeOffset;
   const dragProgress =
@@ -382,29 +543,43 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
   const overlayOpacity = isDragging ? 1 - dragProgress : backdropOpacity;
   const overlayTransition = isDragging ? 'none' : `opacity ${duration} ${easing}`;
 
-  const lastOverlayStyleRef = useRef<{ opacity: number; transition: string } | null>(null);
+  const lastOverlayStyleRef = useRef<{ opacity: number; transition: string; pointerEvents: 'auto' | 'none' } | null>(null);
 
   useEffect(() => {
     if (!isTop || !ctx) return;
     const opacity = enableBackdrop ? overlayOpacity : 0;
     const transition = overlayTransition;
+    const pointerEvents = enableBackdrop && enableClickBackdropToClose ? 'auto' : 'none';
     const last = lastOverlayStyleRef.current;
-    if (last && last.opacity === opacity && last.transition === transition) return;
-    lastOverlayStyleRef.current = { opacity, transition };
-    ctx.setOverlayStyle({ opacity, transition });
-  }, [isTop, ctx, enableBackdrop, overlayOpacity, overlayTransition]);
+    if (last && last.opacity === opacity && last.transition === transition && last.pointerEvents === pointerEvents) return;
+    lastOverlayStyleRef.current = { opacity, transition, pointerEvents };
+    ctx.setOverlayStyle({ opacity, transition, pointerEvents });
+  }, [isTop, ctx, enableBackdrop, enableClickBackdropToClose, overlayOpacity, overlayTransition]);
 
   const content = (
     <>
       <div
         ref={sheetRef}
-        className={`bottom-sheet${isDragging ? ' dragging' : ''} ${className ?? ''}`.trim()}
-        {...(gestureOnlyOnHandler ? {} : gestureProps)}
+        role={isTop ? 'dialog' : undefined}
+        aria-modal={isTop ? true : undefined}
+        className={`bottom-sheet${isDragging ? ' dragging' : ''}${stackDepth > 0 ? ' stacked' : ''} ${className ?? ''}`.trim()}
+        {...(stackDepth === 0 && !gestureOnlyOnHandler ? gestureProps : {})}
         style={{
           position: 'fixed',
-          ...(effectiveWidth
-            ? { width: effectiveWidth, maxWidth: '100%', left: '50%', transform: `translateX(-50%) translateY(${translateY}px)` }
-            : { left: 0, right: 0, transform: `translateY(${translateY}px)` }),
+          ...(widthCss
+            ? {
+              width: widthCss,
+              maxWidth: '100%',
+              left: '50%',
+              transform: `translateX(-50%) translateY(${translateY}px) scale(${stackScale}) translateY(-${stackOffsetY}%)`,
+              transformOrigin: 'bottom center',
+            }
+            : {
+              left: 0,
+              right: 0,
+              transform: `translateY(${translateY}px) scale(${stackScale}) translateY(-${stackOffsetY}%)`,
+              transformOrigin: 'bottom center',
+            }),
           bottom: 0,
           ...(contentDrivenHeight
             ? { height: sheetHeight === 0 ? 'auto' : sheetHeight, maxHeight: '100vh' }
@@ -423,7 +598,7 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
         <div
           ref={handlerRef}
           className="bottom-sheet-handler"
-          {...(gestureOnlyOnHandler ? gestureProps : {})}
+          {...(stackDepth === 0 && gestureOnlyOnHandler ? gestureProps : {})}
           style={{
             flexShrink: 0,
             display: 'flex',
@@ -451,12 +626,30 @@ export function BottomSheet({ descriptor, index, isTop }: BottomSheetProps) {
               : { flex: 1, overflow: 'auto', minHeight: 0 }),
           }}
         >
-          <Component
-            {...(componentProps as object)}
-            closeDrawer={closeDrawer}
-            snapToIndex={snapToIndex}
-          />
+          <ScrollContainerContext.Provider value={scrollCtxValue}>
+            <Component
+              {...(componentProps as object)}
+              closeDrawer={closeDrawer}
+              snapToIndex={snapToIndex}
+            />
+          </ScrollContainerContext.Provider>
         </div>
+        <div
+          className="bottom-sheet-stack-overlay"
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'var(--bottom-sheet-stack-overlay-bg)',
+            borderRadius: 'inherit',
+            pointerEvents: stackDepth === 0 && !isRevealingDuringClose ? 'none' : 'auto',
+            opacity: isRevealingDuringClose && stackDepth === 1
+              ? 1 - easedProgress
+              : (stackDepth === 0 ? 0 : 1),
+            transition: isRevealingDuringClose ? 'none' : `opacity ${duration} ${easing}`,
+            ...((stackDepth > 0 || isRevealingDuringClose) ? { cursor: 'default' as const } : {}),
+          }}
+        />
       </div>
     </>
   );

@@ -16,8 +16,8 @@ export interface PushOptions<T = Record<string, unknown>> {
   component: ComponentType<T & BottomSheetInjectedProps>;
   props?: T;
   height?: string | number;
-  /** Width in any CSS unit (%, rem, px, vw, etc.). When set, the sheet is centered. */
-  width?: string;
+  /** Width in any CSS unit (%, rem, px, vw, etc.), or number (treated as px). When set, the sheet is centered. */
+  width?: string | number;
   /** Snap points (e.g. ['10%', '25%']). Also accepts `snapPoints` as alias. */
   snapPoint?: string[];
   /** Alias for snapPoint. Prefer snapPoint. */
@@ -37,8 +37,8 @@ export interface SheetDescriptor<T = Record<string, unknown>> {
   component: ComponentType<T & BottomSheetInjectedProps>;
   props: T;
   height?: string | number;
-  /** Width in any CSS unit (%, rem, px, vw, etc.). When set, the sheet is centered. */
-  width?: string;
+  /** Width in any CSS unit (%, rem, px, vw, etc.), or number (treated as px). When set, the sheet is centered. */
+  width?: string | number;
   snapPoint?: string[];
   className?: string;
   onClose?: () => void;

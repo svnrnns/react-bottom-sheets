@@ -15,6 +15,9 @@
   --bottom-sheet-handler-padding: 0rem 0rem 0.5rem 0rem;
   --bottom-sheet-gap: 0.5rem;
   --bottom-sheet-close-extra-offset: 0;
+  --bottom-sheet-stack-overlay-bg: rgba(0, 0, 0, 0.5);
+  --bottom-sheet-drag-hitbox-extension: 8px;
+  --bottom-sheet-content-touch-action: none;
 }
 
 .bottom-sheets-portal {
@@ -42,6 +45,20 @@
   cursor: grabbing;
 }
 
+.bottom-sheet.stacked {
+  cursor: default;
+}
+
+.bottom-sheet::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--bottom-sheet-drag-hitbox-extension);
+  pointer-events: auto;
+}
+
 .bottom-sheet::after {
   content: '';
   position: absolute;
@@ -63,5 +80,5 @@
 }
 
 .bottom-sheet-content {
-  touch-action: pan-y;
+  touch-action: var(--bottom-sheet-content-touch-action);
 }
