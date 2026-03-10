@@ -5,12 +5,12 @@ import {
   getSheets,
   invokeSnapToIndex,
   invokeOpenFully,
-} from './store';
+} from './store/store';
 import type { PushOptions, BottomSheetInstance, SheetDescriptor } from './types';
-import { BottomSheetRoot } from './context';
+import { BottomSheetRoot } from './context/context';
 
 export { BottomSheetRoot };
-export type { BottomSheetRootProps } from './context';
+export type { BottomSheetRootProps } from './context/context';
 
 export function pushBottomSheet<T = Record<string, unknown>>(
   options: PushOptions<T>

@@ -1,4 +1,4 @@
-import type { SheetDescriptor } from './types';
+import type { SheetDescriptor } from '../types';
 
 export type SheetController = {
   snapToIndex: (index: number) => void;

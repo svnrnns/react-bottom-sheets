@@ -6,11 +6,11 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [
     react(),
-    dts({ include: ['src'], outDir: 'dist' }),
+    dts({ include: ['lib'], outDir: 'dist' }),
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(__dirname, 'lib/index.ts'),
       name: 'SvnrnnsBottomSheets',
       fileName: (format) => (format === 'es' ? 'index.js' : 'index.cjs'),
       formats: ['es', 'cjs'],

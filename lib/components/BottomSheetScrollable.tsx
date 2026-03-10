@@ -1,5 +1,5 @@
 import { useRef, useEffect, type CSSProperties } from 'react';
-import { useScrollContainerContext } from './scrollContext';
+import { useScrollContainerContext } from '../context/scrollContext';
 
 export interface BottomSheetScrollableProps {
   children: React.ReactNode;

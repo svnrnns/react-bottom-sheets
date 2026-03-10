@@ -1,6 +1,6 @@
 {
   "name": "@svnrnns/react-bottom-sheets",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Imperative bottom sheets for React with gestures, snap points and stacking",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,8 +18,10 @@
     "dist"
   ],
   "scripts": {
+    "prepublishOnly": "npm run clean && npm run build",
+    "clean": "rm -rf dist",
     "build": "vite build",
-    "prepublishOnly": "npm run build"
+    "dev": "vite build --watch"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

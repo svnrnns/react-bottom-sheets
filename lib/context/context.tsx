@@ -6,15 +6,15 @@ import {
   registerSheetController,
   unregisterSheetController,
   getSheetController,
-} from './store';
-import type { SheetDescriptor } from './types';
-import { BottomSheet } from './BottomSheet';
+} from '../store/store';
+import type { SheetDescriptor } from '../types';
+import { BottomSheet } from '../components/BottomSheet';
 
 export const BottomSheetContext = createContext<{
   registerController: (id: symbol | string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => void;
   unregisterController: (id: symbol | string) => void;
   defaultWidth?: string | number;
-  setOverlayStyle: (style: { opacity: number; transition: string; pointerEvents?: 'auto' | 'none' }) => void;
+  setOverlayStyle: (style: { opacity: number; transition: string; pointerEvents: 'auto' | 'none' }) => void;
   topSheetClosingProgress: number | null;
   setTopSheetClosingProgress: (progress: number | null) => void;
 } | null>(null);

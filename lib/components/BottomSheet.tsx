@@ -7,13 +7,13 @@ import {
   useContext,
 } from 'react';
 import { flushSync } from 'react-dom';
-import type { SheetDescriptor } from './types';
-import { parseSnapPoints, rubberband } from './snap';
-import { getReleaseTarget } from './gestures';
-import { removeSheet } from './store';
-import { BottomSheetContext } from './context';
-import { ScrollContainerContext, useScrollContainerContextValue } from './scrollContext';
-import { useFocusTrap } from './useFocusTrap';
+import type { SheetDescriptor } from '../types';
+import { parseSnapPoints, rubberband } from '../utils/snap';
+import { getReleaseTarget } from '../utils/gestures';
+import { removeSheet } from '../store/store';
+import { BottomSheetContext } from '../context/context';
+import { ScrollContainerContext, useScrollContainerContextValue } from '../context/scrollContext';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const VIEWPORT_MAX = typeof window !== 'undefined' ? () => window.innerHeight : () => 800;
 const DRAG_THRESHOLD = 5;
