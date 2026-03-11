@@ -18,6 +18,24 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 const VIEWPORT_MAX = typeof window !== 'undefined' ? () => window.innerHeight : () => 800;
 const DRAG_THRESHOLD = 5;
 
+/** Interactive elements that must receive tap/click; don't capture pointer over these. */
+function isInteractiveElement(target: Node, stopAt: Node | null): boolean {
+  let el: Node | null = target;
+  while (el && el !== stopAt) {
+    if (!(el instanceof HTMLElement)) {
+      el = el.parentNode;
+      continue;
+    }
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'button' || tag === 'a' || tag === 'input' || tag === 'select' || tag === 'textarea') return true;
+    const role = el.getAttribute('role');
+    if (role === 'button' || role === 'link' || role === 'tab' || role === 'menuitem' || role === 'option') return true;
+    if (el.hasAttribute('contenteditable')) return true;
+    el = el.parentNode;
+  }
+  return false;
+}
+
 function getCssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -327,6 +345,10 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
       if (isTouch && isInContent) {
         // When inside a scroll container, defer capture until we know swipe direction (see handlePointerMove)
         if (scrollCtxValue.isInScrollContainer(e.target as Node)) {
+          return;
+        }
+        // Don't capture over interactive elements (buttons, links, inputs) so tap/click works on touch
+        if (isInteractiveElement(e.target as Node, contentRef.current)) {
           return;
         }
         e.currentTarget.setPointerCapture(e.pointerId);

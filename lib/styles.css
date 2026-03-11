@@ -18,6 +18,7 @@
   --bottom-sheet-stack-overlay-bg: rgba(0, 0, 0, 0.5);
   --bottom-sheet-drag-hitbox-extension: 8px;
   --bottom-sheet-content-touch-action: none;
+  --bottom-sheet-border: none;
 }
 
 .bottom-sheets-portal {
@@ -40,6 +41,9 @@
   user-select: none;
   cursor: grab;
   outline: none;
+  border-left: var(--bottom-sheet-border);
+  border-right: var(--bottom-sheet-border);
+  border-top: var(--bottom-sheet-border);
 }
 
 .bottom-sheet.dragging {
@@ -70,6 +74,8 @@
   height: calc(2 * var(--bottom-sheet-height, 0px));
   background: var(--bottom-sheet-bg);
   pointer-events: none;
+  border-left: var(--bottom-sheet-border);
+  border-right: var(--bottom-sheet-border);
 }
 
 .bottom-sheet-handler {
