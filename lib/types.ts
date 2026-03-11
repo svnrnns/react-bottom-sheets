@@ -1,19 +1,14 @@
 import type { ComponentType } from 'react';
 
-export interface BottomSheetInjectedProps {
-  closeDrawer: () => void;
-  snapToIndex: (index: number) => void;
-}
-
-export interface BottomSheetInstance {
-  id: string | symbol;
+export interface BottomSheetProps {
+  id: string;
   close: () => void;
   snapToIndex: (index: number) => void;
   openFully: () => void;
 }
 
-export interface PushOptions<T = Record<string, unknown>> {
-  component: ComponentType<T & BottomSheetInjectedProps>;
+export interface BottomSheetPushOptions<T = Record<string, unknown>> {
+  component: ComponentType<T & BottomSheetProps>;
   props?: T;
   height?: string | number;
   /** Width in any CSS unit (%, rem, px, vw, etc.), or number (treated as px). When set, the sheet is centered. */
@@ -33,8 +28,8 @@ export interface PushOptions<T = Record<string, unknown>> {
 }
 
 export interface SheetDescriptor<T = Record<string, unknown>> {
-  id: string | symbol;
-  component: ComponentType<T & BottomSheetInjectedProps>;
+  id: string;
+  component: ComponentType<T & BottomSheetProps>;
   props: T;
   height?: string | number;
   /** Width in any CSS unit (%, rem, px, vw, etc.), or number (treated as px). When set, the sheet is centered. */

@@ -27,9 +27,9 @@ export default function App({ Component, pageProps }) {
 
 **`BottomSheetRoot` props:**
 
-| Prop    | Type     | Description                                                                                                        |
-| ------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| `width` | `string` | Default width for all bottom sheets (e.g. `'50%'`, `'20rem'`, `'400px'`). When set, sheets are centered. Optional. |
+| Prop    | Type              | Description                                                                                                        |
+| ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `width` | `string \| number` | Default width for all bottom sheets (e.g. `'50%'`, `'20rem'`, `400`). Number = px. When set, sheets are centered. Optional. |
 
 ## Usage
 
@@ -38,13 +38,13 @@ export default function App({ Component, pageProps }) {
 ```tsx
 import { pushBottomSheet } from "@svnrnns/react-bottom-sheets";
 
-function MyContent({ title, closeDrawer, snapToIndex }) {
+function MyContent({ title, close, snapToIndex }) {
   return (
     <div>
       <h2>{title}</h2>
       <button onClick={() => snapToIndex(0)}>Half</button>
       <button onClick={() => snapToIndex(1)}>Full</button>
-      <button onClick={closeDrawer}>Close</button>
+      <button onClick={close}>Close</button>
     </div>
   );
 }
@@ -64,7 +64,7 @@ instance.openFully();
 
 ### API
 
-- **`pushBottomSheet<T>(options)`** — Opens a new bottom sheet. Returns `BottomSheetInstance`.
+- **`pushBottomSheet<T>(options)`** — Opens a new bottom sheet. Returns `BottomSheetProps`.
   - `options.component` — React component to render inside the sheet.
   - `options.props` — Props passed to the component (type-inferred).
   - `options.height` — Optional fixed height (number in px, or string e.g. `"50%"`, `"20rem"`).
@@ -78,8 +78,8 @@ instance.openFully();
   - `options.gestureOnlyOnHandler` — If `true`, only the handler bar is draggable; otherwise the whole sheet is.
   - `options.disableSwipeDownToClose` — If `true`, swipe-down never closes the sheet; it always snaps back to the first snap point or open position.
 
-- **`BottomSheetInstance`** (returned by `pushBottomSheet`):
-  - `id` — Unique id (symbol). Use with `closeBottomSheet(id)` to close a specific sheet.
+- **`BottomSheetProps`** (returned by `pushBottomSheet` and injected into content component):
+  - `id` — Unique id (UUID string). Use with `closeBottomSheet(id)` to close a specific sheet.
   - `close()` — Closes this sheet.
   - `snapToIndex(index)` — Moves the sheet to the given snap point index (0-based).
   - `openFully()` — Opens to the highest snap point (or full height if no snaps). Calls to `snapToIndex` and `openFully` before the sheet is mounted are queued and applied when ready.
@@ -92,10 +92,12 @@ instance.openFully();
 
 ### Injected props
 
-Every component rendered inside a bottom sheet receives:
+Every component rendered inside a bottom sheet receives (all from `BottomSheetProps`):
 
-- **`closeDrawer()`** — Closes this sheet.
-- **`snapToIndex(index: number)`** — Snaps this sheet to the given index.
+- **`id`** — Unique id (UUID string). Use with `closeBottomSheet(id)` to close a specific sheet.
+- **`close()`** — Closes this sheet.
+- **`snapToIndex(index: number)`** — Snaps this sheet to the given index (0-based).
+- **`openFully()`** — Opens to the highest snap point (or full height if no snaps).
 
 ### Scrollable content (`BottomSheetScrollable`)
 
@@ -107,7 +109,7 @@ When the sheet content is scrollable, vertical drags can conflict with sheet ges
 ```tsx
 import { pushBottomSheet, BottomSheetScrollable } from "@svnrnns/react-bottom-sheets";
 
-function MyContent({ closeDrawer }) {
+function MyContent({ close }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <h2>Header</h2>
@@ -178,7 +180,7 @@ When a bottom sheet is pushed and becomes the top sheet, focus is trapped inside
 
 The package exports these types:
 
-- `BottomSheetInstance` — Return type of `pushBottomSheet`.
-- `PushOptions<T>` — Options for `pushBottomSheet`; `T` is the props type of your content component.
-- `BottomSheetInjectedProps` — Props injected into the content component (`closeDrawer`, `snapToIndex`).
-- `BottomSheetRootProps` — Props for `BottomSheetRoot` (`width`).
+- `BottomSheetProps` — Return type of `pushBottomSheet` and props injected into the content component (`id`, `close`, `snapToIndex`, `openFully`).
+- `BottomSheetPushOptions<T>` — Options for `pushBottomSheet`; `T` is the props type of your content component.
+- `BottomSheetRootProps` — Props for `BottomSheetRoot` (`width?: string | number`).
+- `BottomSheetScrollableProps` — Props for `BottomSheetScrollable` (`className`, `style`, `children`).

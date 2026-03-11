@@ -6,15 +6,15 @@ import {
   invokeSnapToIndex,
   invokeOpenFully,
 } from './store/store';
-import type { PushOptions, BottomSheetInstance, SheetDescriptor } from './types';
+import type { BottomSheetPushOptions, BottomSheetProps, SheetDescriptor } from './types';
 import { BottomSheetRoot } from './context/context';
 
 export { BottomSheetRoot };
 export type { BottomSheetRootProps } from './context/context';
 
 export function pushBottomSheet<T = Record<string, unknown>>(
-  options: PushOptions<T>
-): BottomSheetInstance {
+  options: BottomSheetPushOptions<T>
+): BottomSheetProps {
   const descriptor: Omit<SheetDescriptor<T>, 'id'> = {
     component: options.component,
     props: (options.props ?? {}) as T,
@@ -46,7 +46,7 @@ export function popBottomSheet(): void {
   }
 }
 
-export function closeBottomSheet(id: string | symbol): void {
+export function closeBottomSheet(id: string): void {
   removeSheet(id);
 }
 

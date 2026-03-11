@@ -6,19 +6,25 @@ export type SheetController = {
   close: () => void;
 };
 
-let idCounter = 0;
-function nextId(): symbol {
-  return Symbol(`bottom-sheet-${++idCounter}`);
+function nextId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
-let sheets: Array<SheetDescriptor & { id: symbol }> = [];
+let sheets: Array<SheetDescriptor & { id: string }> = [];
 const listeners = new Set<() => void>();
 
 function emit() {
   listeners.forEach((l) => l());
 }
 
-export function getSheets(): ReadonlyArray<SheetDescriptor & { id: symbol }> {
+export function getSheets(): ReadonlyArray<SheetDescriptor & { id: string }> {
   return sheets;
 }
 
@@ -27,15 +33,15 @@ export function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function addSheet(descriptor: Omit<SheetDescriptor, 'id'>): symbol {
+export function addSheet(descriptor: Omit<SheetDescriptor, 'id'>): string {
   const id = nextId();
-  const entry = { ...descriptor, id } as SheetDescriptor & { id: symbol };
+  const entry = { ...descriptor, id } as SheetDescriptor & { id: string };
   sheets = [...sheets, entry];
   emit();
   return id;
 }
 
-export function removeSheet(id: string | symbol): void {
+export function removeSheet(id: string): void {
   sheets = sheets.filter((s) => s.id !== id);
   emit();
 }
@@ -45,11 +51,11 @@ export function removeAllSheets(): void {
   emit();
 }
 
-const sheetControllers = new Map<symbol | string, SheetController>();
-const pendingSnapIndex = new Map<symbol | string, number>();
-const pendingOpenFully = new Set<symbol | string>();
+const sheetControllers = new Map<string, SheetController>();
+const pendingSnapIndex = new Map<string, number>();
+const pendingOpenFully = new Set<string>();
 
-export function registerSheetController(id: symbol | string, controller: SheetController): void {
+export function registerSheetController(id: string, controller: SheetController): void {
   sheetControllers.set(id, controller);
   const snap = pendingSnapIndex.get(id);
   if (snap !== undefined) {
@@ -62,21 +68,21 @@ export function registerSheetController(id: symbol | string, controller: SheetCo
   }
 }
 
-export function unregisterSheetController(id: symbol | string): void {
+export function unregisterSheetController(id: string): void {
   sheetControllers.delete(id);
 }
 
-export function getSheetController(id: symbol | string): SheetController | undefined {
+export function getSheetController(id: string): SheetController | undefined {
   return sheetControllers.get(id);
 }
 
-export function invokeSnapToIndex(id: symbol | string, index: number): void {
+export function invokeSnapToIndex(id: string, index: number): void {
   const ctrl = sheetControllers.get(id);
   if (ctrl) ctrl.snapToIndex(index);
   else pendingSnapIndex.set(id, index);
 }
 
-export function invokeOpenFully(id: symbol | string): void {
+export function invokeOpenFully(id: string): void {
   const ctrl = sheetControllers.get(id);
   if (ctrl) ctrl.openFully();
   else pendingOpenFully.add(id);

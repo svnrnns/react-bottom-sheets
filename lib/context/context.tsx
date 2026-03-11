@@ -11,15 +11,15 @@ import type { SheetDescriptor } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
 
 export const BottomSheetContext = createContext<{
-  registerController: (id: symbol | string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => void;
-  unregisterController: (id: symbol | string) => void;
+  registerController: (id: string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => void;
+  unregisterController: (id: string) => void;
   defaultWidth?: string | number;
   setOverlayStyle: (style: { opacity: number; transition: string; pointerEvents: 'auto' | 'none' }) => void;
   topSheetClosingProgress: number | null;
   setTopSheetClosingProgress: (progress: number | null) => void;
 } | null>(null);
 
-function useSheets(): ReadonlyArray<SheetDescriptor & { id: symbol }> {
+function useSheets(): ReadonlyArray<SheetDescriptor & { id: string }> {
   return useSyncExternalStore(subscribe, getSheets, getSheets);
 }
 
@@ -38,13 +38,13 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
   }>({ opacity: 0, transition: 'opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: 'none' });
 
   const registerController = useCallback(
-    (id: symbol | string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => {
+    (id: string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => {
       registerSheetController(id, ctrl);
     },
     []
   );
 
-  const unregisterController = useCallback((id: symbol | string) => {
+  const unregisterController = useCallback((id: string) => {
     unregisterSheetController(id);
   }, []);
 
@@ -81,7 +81,7 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
           )}
           {sheets.map((descriptor, index) => (
             <BottomSheet
-              key={descriptor.id.toString()}
+              key={descriptor.id}
               descriptor={descriptor}
               index={index}
               isTop={index === sheets.length - 1}

@@ -52,18 +52,18 @@ function scaleForStackDepth(d: number): number {
 }
 
 function offsetForStackDepth(d: number): number {
-  return d === 0 ? 0 : 12 + (d - 1) * 8;
+  return d === 0 ? 0 : 15 + (d - 1) * 10;
 }
 
-export interface BottomSheetProps {
-  descriptor: SheetDescriptor & { id: symbol };
+export interface BottomSheetComponentProps {
+  descriptor: SheetDescriptor & { id: string };
   index: number;
   isTop: boolean;
   /** 0 = top sheet, 1 = first behind, 2 = second behind, etc. */
   stackDepth: number;
 }
 
-export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomSheetProps) {
+export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomSheetComponentProps) {
   const ctx = useContext(BottomSheetContext);
   const {
     id,
@@ -629,8 +629,10 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
           <ScrollContainerContext.Provider value={scrollCtxValue}>
             <Component
               {...(componentProps as object)}
-              closeDrawer={closeDrawer}
+              id={id}
+              close={closeDrawer}
               snapToIndex={snapToIndex}
+              openFully={openFully}
             />
           </ScrollContainerContext.Provider>
         </div>
