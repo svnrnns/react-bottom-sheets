@@ -128,8 +128,9 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
     .filter((s) => s <= sheetHeight)
     .sort((a, b) => a - b);
   const firstSnapY = effectiveSnaps.length > 0 ? sheetHeight - effectiveSnaps[0] : 0;
+  const shouldStartClosed = contentDrivenHeight || effectiveSnaps.length > 0 || heightProp != null;
   const [translateY, setTranslateY] = useState(() =>
-    contentDrivenHeight ? viewportHeight : effectiveSnaps.length > 0 ? closedY : 0
+    shouldStartClosed ? (contentDrivenHeight ? viewportHeight : closedY) : 0
   );
   const [isDragging, setIsDragging] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -141,7 +142,7 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
   const heightAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
-    if (effectiveSnaps.length > 0) setTranslateY(closedY);
+    if (shouldStartClosed) setTranslateY(closedY);
   }, []);
 
   useEffect(() => {
@@ -226,12 +227,16 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
     if (contentDrivenHeight && !contentHeightMeasured) return;
     setHasOpened(true);
     setTranslateY(closedY);
+    // Double rAF ensures the closed state is painted before animating to open,
+    // so the CSS transition runs correctly (fixes fixed height + no snapPoints case)
     requestAnimationFrame(() => {
-      setBackdropOpacity(1);
-      setIsAnimating(true);
-      setTranslateY(firstSnapY);
-      const duration = getDurationMs();
-      setTimeout(() => setIsAnimating(false), duration);
+      requestAnimationFrame(() => {
+        setBackdropOpacity(1);
+        setIsAnimating(true);
+        setTranslateY(firstSnapY);
+        const duration = getDurationMs();
+        setTimeout(() => setIsAnimating(false), duration);
+      });
     });
   }, [hasOpened, contentDrivenHeight, contentHeightMeasured, firstSnapY, closedY, sheetHeight]);
 
