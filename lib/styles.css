@@ -70,7 +70,7 @@
   left: 0;
   right: 0;
   top: 99%;
-  width: 100%;
+  width: calc(100% + 2px);
   height: calc(2 * var(--bottom-sheet-height, 0px));
   background: var(--bottom-sheet-bg);
   pointer-events: none;
