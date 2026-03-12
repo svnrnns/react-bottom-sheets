@@ -1,4 +1,4 @@
-import { createContext, useSyncExternalStore, useCallback, useState } from 'react';
+import { createContext, useSyncExternalStore, useCallback, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   getSheets,
@@ -26,9 +26,11 @@ function useSheets(): ReadonlyArray<SheetDescriptor & { id: string }> {
 export interface BottomSheetRootProps {
   /** Default width for all bottom sheets (e.g. '50%', '20rem', 400). Number = px. When set, sheets are centered. */
   width?: string | number;
+  /** When true, document body scroll is disabled while any bottom sheet is open. Can be overridden per sheet via pushBottomSheet({ disableBodyScroll: false }). */
+  disableBodyScroll?: boolean;
 }
 
-export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
+export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodyScroll }: BottomSheetRootProps = {}) {
   const sheets = useSheets();
   const [topSheetClosingProgress, setTopSheetClosingProgress] = useState<number | null>(null);
   const [overlayStyle, setOverlayStyle] = useState<{
@@ -36,6 +38,27 @@ export function BottomSheetRoot({ width }: BottomSheetRootProps = {}) {
     transition: string;
     pointerEvents: 'auto' | 'none';
   }>({ opacity: 0, transition: 'opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: 'none' });
+
+  const topSheet = sheets.length > 0 ? sheets[sheets.length - 1] : null;
+  const isTopSheetClosing = topSheetClosingProgress !== null;
+  const shouldDisableBodyScroll =
+    typeof document !== 'undefined' &&
+    topSheet != null &&
+    !isTopSheetClosing &&
+    (topSheet.disableBodyScroll ?? defaultDisableBodyScroll) === true;
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (shouldDisableBodyScroll) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+    document.body.style.overflow = '';
+    return () => {};
+  }, [shouldDisableBodyScroll]);
 
   const registerController = useCallback(
     (id: string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => {

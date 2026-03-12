@@ -28,6 +28,7 @@ export function pushBottomSheet<T = Record<string, unknown>>(
     disableEsc: options.disableEsc,
     gestureOnlyOnHandler: options.gestureOnlyOnHandler,
     disableSwipeDownToClose: options.disableSwipeDownToClose,
+    disableBodyScroll: options.disableBodyScroll,
   };
   const id = addSheet(descriptor as Omit<SheetDescriptor, 'id'>);
   return {

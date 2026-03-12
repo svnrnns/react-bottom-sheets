@@ -27,9 +27,10 @@ export default function App({ Component, pageProps }) {
 
 **`BottomSheetRoot` props:**
 
-| Prop    | Type              | Description                                                                                                        |
-| ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `width` | `string \| number` | Default width for all bottom sheets (e.g. `'50%'`, `'20rem'`, `400`). Number = px. When set, sheets are centered. Optional. |
+| Prop           | Type               | Description                                                                                                                                 |
+| -------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `width`        | `string \| number`  | Default width for all bottom sheets (e.g. `'50%'`, `'20rem'`, `400`). Number = px. When set, sheets are centered. Optional.                 |
+| `disableBodyScroll` | `boolean` | When `true`, document body scroll is disabled while any bottom sheet is open. Scroll is re-enabled as soon as the close animation starts (or when the user releases a swipe that will close). Can be overridden per sheet via `pushBottomSheet({ disableBodyScroll })`. Optional. |
 
 ## Usage
 
@@ -77,6 +78,7 @@ instance.openFully();
   - `options.disableEsc` — If `true`, Escape key does not close this sheet.
   - `options.gestureOnlyOnHandler` — If `true`, only the handler bar is draggable; otherwise the whole sheet is.
   - `options.disableSwipeDownToClose` — If `true`, swipe-down never closes the sheet; it always snaps back to the first snap point or open position.
+  - `options.disableBodyScroll` — If `true`, document body scroll is disabled while this sheet is the active (top) sheet. Scroll is re-enabled when the close animation starts. If omitted, uses `BottomSheetRoot`'s `disableBodyScroll` default.
 
 - **`BottomSheetProps`** (returned by `pushBottomSheet` and injected into content component):
   - `id` — Unique id (UUID string). Use with `closeBottomSheet(id)` to close a specific sheet.
@@ -182,5 +184,5 @@ The package exports these types:
 
 - `BottomSheetProps` — Return type of `pushBottomSheet` and props injected into the content component (`id`, `close`, `snapToIndex`, `openFully`).
 - `BottomSheetPushOptions<T>` — Options for `pushBottomSheet`; `T` is the props type of your content component.
-- `BottomSheetRootProps` — Props for `BottomSheetRoot` (`width?: string | number`).
+- `BottomSheetRootProps` — Props for `BottomSheetRoot` (`width?: string | number`, `disableBodyScroll?: boolean`).
 - `BottomSheetScrollableProps` — Props for `BottomSheetScrollable` (`className`, `style`, `children`).

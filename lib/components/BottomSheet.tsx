@@ -142,7 +142,7 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
   const heightAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
-    if (shouldStartClosed) setTranslateY(closedY);
+    if (effectiveSnaps.length > 0 || heightProp != null) setTranslateY(closedY);
   }, []);
 
   useEffect(() => {

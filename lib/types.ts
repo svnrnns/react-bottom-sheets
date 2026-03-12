@@ -25,6 +25,8 @@ export interface BottomSheetPushOptions<T = Record<string, unknown>> {
   gestureOnlyOnHandler?: boolean;
   /** When true, swipe down never closes the sheet; it always returns to the first snap point or open position. */
   disableSwipeDownToClose?: boolean;
+  /** When true, document body scroll is disabled while this sheet is the active (top) sheet. Falls back to BottomSheetRoot's disableBodyScroll if undefined. */
+  disableBodyScroll?: boolean;
 }
 
 export interface SheetDescriptor<T = Record<string, unknown>> {
@@ -42,4 +44,6 @@ export interface SheetDescriptor<T = Record<string, unknown>> {
   disableEsc?: boolean;
   gestureOnlyOnHandler?: boolean;
   disableSwipeDownToClose?: boolean;
+  /** When true, document body scroll is disabled while this sheet is the active (top) sheet. Falls back to BottomSheetRoot's disableBodyScroll if undefined. */
+  disableBodyScroll?: boolean;
 }
