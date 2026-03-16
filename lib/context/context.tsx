@@ -1,4 +1,4 @@
-import { createContext, useSyncExternalStore, useCallback, useState, useEffect } from 'react';
+import { createContext, useSyncExternalStore, useCallback, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   getSheets,
@@ -47,54 +47,37 @@ export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodySc
     !isTopSheetClosing &&
     (topSheet.disableBodyScroll ?? defaultDisableBodyScroll) === true;
 
+  const portalRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    if (shouldDisableBodyScroll) {
-      const { body, documentElement: html } = document;
-      const prevBodyOverflow = body.style.overflow;
-      const prevHtmlOverflow = html.style.overflow;
-      const isIOS =
-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1);
-
-      if (isIOS) {
-        const scrollY = window.scrollY ?? window.pageYOffset;
-        const prevBodyPosition = body.style.position;
-        const prevBodyTop = body.style.top;
-        const prevBodyLeft = body.style.left;
-        const prevBodyRight = body.style.right;
-        const prevBodyWidth = body.style.width;
-
-        html.style.overflow = 'hidden';
-        body.style.overflow = 'hidden';
-        body.style.position = 'fixed';
-        body.style.top = `-${scrollY}px`;
-        body.style.left = '0';
-        body.style.right = '0';
-        body.style.width = '100%';
-
-        return () => {
-          html.style.overflow = prevHtmlOverflow;
-          body.style.overflow = prevBodyOverflow;
-          body.style.position = prevBodyPosition;
-          body.style.top = prevBodyTop;
-          body.style.left = prevBodyLeft;
-          body.style.right = prevBodyRight;
-          body.style.width = prevBodyWidth;
-          window.scrollTo(0, scrollY);
-        };
+    if (typeof document === 'undefined' || !shouldDisableBodyScroll) return;
+    const shouldPreventScroll = (target: EventTarget | null): boolean => {
+      if (!portalRef.current || !(target instanceof Node)) return true;
+      if (!portalRef.current.contains(target)) return true;
+      let el: Element | null = target instanceof Element ? target : null;
+      while (el && el !== portalRef.current) {
+        if (el instanceof HTMLElement) {
+          const overflowY = getComputedStyle(el).overflowY;
+          if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+            return false; // permitir scroll en este contenedor
+          }
+        }
+        el = el.parentElement;
       }
-
-      html.style.overflow = 'hidden';
-      body.style.overflow = 'hidden';
-      return () => {
-        html.style.overflow = prevHtmlOverflow;
-        body.style.overflow = prevBodyOverflow;
-      };
-    }
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
-    return () => {};
+      return true;
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (shouldPreventScroll(e.target)) e.preventDefault();
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (shouldPreventScroll(e.target)) e.preventDefault();
+    };
+    document.addEventListener('wheel', onWheel, { passive: false });
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      document.removeEventListener('wheel', onWheel);
+      document.removeEventListener('touchmove', onTouchMove);
+    };
   }, [shouldDisableBodyScroll]);
 
   const registerController = useCallback(
@@ -116,7 +99,20 @@ export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodySc
   return (
     <BottomSheetContext.Provider value={{ registerController, unregisterController, defaultWidth: width, setOverlayStyle, topSheetClosingProgress, setTopSheetClosingProgress }}>
       {createPortal(
-        <div className="bottom-sheets-portal" aria-hidden="false">
+        <div ref={portalRef} className="bottom-sheets-portal" aria-hidden="false">
+          {shouldDisableBodyScroll && (
+            <div
+              className="bottom-sheet-scroll-lock"
+              aria-hidden
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: -1,
+                touchAction: 'none',
+                pointerEvents: 'auto',
+              }}
+            />
+          )}
           {sheets.length > 0 && (
             <div
               className="bottom-sheet-overlay"
@@ -129,6 +125,7 @@ export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodySc
                 pointerEvents: overlayStyle.pointerEvents ?? 'none',
                 opacity: overlayStyle.opacity,
                 transition: overlayStyle.transition,
+                ...(shouldDisableBodyScroll ? { touchAction: 'none' as const } : {}),
               }}
               onClick={() => {
                 const top = sheets[sheets.length - 1];

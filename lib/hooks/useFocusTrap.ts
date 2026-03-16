@@ -62,7 +62,7 @@ export function useFocusTrap(
     return () => {
       container.removeEventListener("keydown", handleKeyDown);
       if (previouslyFocused && typeof previouslyFocused.focus === "function") {
-        previouslyFocused.focus();
+        previouslyFocused.focus({ preventScroll: true });
       }
     };
     // containerRef is intentionally omitted - refs are mutable and should not be in deps
