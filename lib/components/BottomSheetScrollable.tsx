@@ -1,26 +1,45 @@
-import { useRef, useEffect, type CSSProperties } from 'react';
+import {
+  createElement,
+  useRef,
+  useEffect,
+  useCallback,
+  type CSSProperties,
+  type ComponentPropsWithoutRef,
+} from 'react';
 import { useScrollContainerContext } from '../context/scrollContext';
 
-export interface BottomSheetScrollableProps {
-  children: React.ReactNode;
+/** Tolerance in px for "at scroll boundary" (matches drawer behavior). */
+const SCROLL_EDGE_TOLERANCE = 2;
+
+export interface BottomSheetScrollableProps extends ComponentPropsWithoutRef<'div'> {
+  children?: React.ReactNode;
   className?: string;
   style?: CSSProperties;
+  ref?: React.Ref<HTMLDivElement>;
 }
 
 /**
- * A scrollable container that coordinates with BottomSheet gestures.
- * - When scrollTop > 0: vertical drags scroll the content (sheet gestures disabled)
- * - When scrollTop === 0: swipe down activates sheet gestures (close/pan), swipe up scrolls
+ * Scrollable container that integrates with BottomSheet gestures (same pattern as DrawerScrollable).
+ * - When scrollTop > 0: vertical drags scroll the content (sheet gestures disabled).
+ * - When scrollTop === 0: swipe down activates sheet gestures (close/pan); swipe up scrolls.
+ * Touch/pointer: only when at top (scrollTop <= tolerance) and dragging down do we prevent scroll
+ * so the sheet can claim the gesture.
  */
-export function BottomSheetScrollable({ children, className, style }: BottomSheetScrollableProps) {
+export function BottomSheetScrollable({
+  children,
+  className,
+  style,
+  ref: refFromProps,
+  ...rest
+}: BottomSheetScrollableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const touchStartY = useRef<number>(0);
+  const touchStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const ctx = useScrollContainerContext();
 
   useEffect(() => {
     if (!ctx || !scrollRef.current) return;
     const el = scrollRef.current;
-    const getCanDrag = () => el.scrollTop === 0;
+    const getCanDrag = () => el.scrollTop <= SCROLL_EDGE_TOLERANCE;
     return ctx.registerScrollContainer(el, getCanDrag);
   }, [ctx]);
 
@@ -28,39 +47,58 @@ export function BottomSheetScrollable({ children, className, style }: BottomShee
     const el = scrollRef.current;
     if (!el) return;
     const onTouchStart = (e: TouchEvent) => {
-      touchStartY.current = e.touches[0]?.clientY ?? 0;
+      if (e.touches.length > 0) {
+        touchStartRef.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+      }
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (el.scrollTop > 0 || !e.cancelable) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      const deltaY = touch.clientY - touchStartY.current;
-      if (deltaY > 8) {
+      if (e.touches.length === 0) return;
+      const deltaX = e.touches[0].clientX - touchStartRef.current.x;
+      const deltaY = e.touches[0].clientY - touchStartRef.current.y;
+      const atTop = el.scrollTop <= SCROLL_EDGE_TOLERANCE;
+      const draggingDown = deltaY > 0;
+      if (atTop && draggingDown && e.cancelable) {
         e.preventDefault();
       }
     };
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+    el.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    el.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
     return () => {
-      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchstart', onTouchStart, { capture: true });
       el.removeEventListener('touchmove', onTouchMove, { capture: true });
     };
   }, []);
 
-  return (
-    <div
-      ref={scrollRef}
-      className={className}
-      style={{
-        flex: 1,
-        minHeight: 0,
-        overflow: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        overscrollBehaviorY: 'contain',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      if (typeof refFromProps === 'function') {
+        refFromProps(node);
+      } else if (refFromProps != null) {
+        (refFromProps as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }
+    },
+    [refFromProps]
   );
+
+  const combinedClassName = ['bottom-sheet-scrollable', className].filter(Boolean).join(' ');
+  const combinedStyle: React.CSSProperties = {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    overscrollBehaviorY: 'contain',
+    ...style,
+  };
+
+  return createElement('div', {
+    ref: setRef,
+    className: combinedClassName,
+    style: combinedStyle,
+    ...rest,
+    children,
+  });
 }
