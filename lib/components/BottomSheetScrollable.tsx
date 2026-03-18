@@ -56,7 +56,6 @@ export function BottomSheetScrollable({
     };
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
-      const deltaX = e.touches[0].clientX - touchStartRef.current.x;
       const deltaY = e.touches[0].clientY - touchStartRef.current.y;
       const atTop = el.scrollTop <= SCROLL_EDGE_TOLERANCE;
       const draggingDown = deltaY > 0;
