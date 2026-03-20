@@ -5,6 +5,7 @@ import {
   useCallback,
   useLayoutEffect,
   useContext,
+  useMemo,
 } from 'react';
 import { flushSync } from 'react-dom';
 import type { SheetDescriptor } from '../types';
@@ -12,11 +13,20 @@ import { parseSnapPoints, rubberband } from '../utils/snap';
 import { getReleaseTarget } from '../utils/gestures';
 import { removeSheet } from '../store/store';
 import { BottomSheetContext } from '../context/context';
-import { ScrollContainerContext, useScrollContainerContextValue } from '../context/scrollContext';
+import { ScrollContainerContext } from '../context/scrollContext';
+import {
+  beginSheetDragDocumentTouchLock,
+  endSheetDragDocumentTouchLock,
+} from '../context/sheetDragDocumentTouchLock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const VIEWPORT_MAX = typeof window !== 'undefined' ? () => window.innerHeight : () => 800;
 const DRAG_THRESHOLD = 5;
+const SCROLL_EDGE_TOLERANCE = 2;
+const MIN_DT_MS = 8;
+/** At scroll top: user moves clearly up → yield to native scroll (after immediate capture for WebKit). */
+const SCROLL_YIELD_PX = 4;
+const GESTURE_UNDECIDED_CLASS = 'bottom-sheet--gesture-undecided';
 
 /** Interactive elements that must receive tap/click; don't capture pointer over these. */
 function isInteractiveElement(target: Node, stopAt: Node | null): boolean {
@@ -34,6 +44,33 @@ function isInteractiveElement(target: Node, stopAt: Node | null): boolean {
     el = el.parentNode;
   }
   return false;
+}
+
+/**
+ * Inner content has been scrolled — do not treat as sheet pull-to-close from scroll top.
+ * Check both `.bottom-sheet-content` and `BottomSheetScrollable`: scroll often lives on content only.
+ */
+function scrollBlocksSheetPull(contentEl: HTMLElement | null, scrollableEl: HTMLElement | null): boolean {
+  const c = contentEl?.scrollTop ?? 0;
+  const s = scrollableEl?.scrollTop ?? 0;
+  return Math.max(c, s) > SCROLL_EDGE_TOLERANCE;
+}
+
+function isAtScrollBoundarySheetClose(
+  contentEl: HTMLElement | null,
+  scrollableEl: HTMLElement | null,
+  deltaX: number,
+  deltaY: number
+): boolean {
+  if (deltaY <= 0) return false;
+  const tol = SCROLL_EDGE_TOLERANCE;
+  const cOk = contentEl == null || contentEl.scrollTop <= tol;
+  const sOk = scrollableEl == null || scrollableEl.scrollTop <= tol;
+  return cOk && sOk;
+}
+
+function isCloseDirectionBottom(deltaY: number, velocityY: number): boolean {
+  return deltaY > 0 || velocityY > 0;
 }
 
 function getCssVar(name: string, fallback: string): string {
@@ -115,7 +152,14 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
   const sheetRef = useRef<HTMLDivElement>(null);
   const handlerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const scrollCtxValue = useScrollContainerContextValue();
+  const [scrollableEl, setScrollableEl] = useState<HTMLElement | null>(null);
+  const registerScrollable = useCallback((el: HTMLElement | null) => {
+    setScrollableEl(el);
+  }, []);
+  const scrollProviderValue = useMemo(
+    () => ({ registerScrollable }),
+    [registerScrollable]
+  );
   const [sheetHeight, setSheetHeight] = useState(() => {
     if (heightProp != null) return parseHeight(heightProp);
     if (contentDrivenHeight) return 0;
@@ -139,7 +183,76 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
   const dragStartRef = useRef<{ y: number; sheetY: number; time: number } | null>(null);
   const lastMoveRef = useRef<{ y: number; time: number } | null>(null);
   const hasCapturedRef = useRef(false);
+  /** Drawer pattern: pointer started on {@link BottomSheetScrollable} (reliable at capture time). */
+  const pointerDownInsideScrollableRef = useRef(false);
+  /**
+   * After setPointerCapture, pointermove often retargets to the sheet — scroll checks using e.target break.
+   * Snapshot at pointerdown: sheet drag only if not on scrollable OR scrollTop is at top (same as drawer boundary).
+   */
+  const pointerDownAllowSheetDragRef = useRef<{ allowSheetDrag: boolean } | null>(null);
+  /**
+   * Touch at scroll top: capture on pointerdown (WebKit loses pointer ~500ms otherwise); sheet drag commits on move down.
+   */
+  const scrollAtTopUndecidedRef = useRef(false);
+  const setScrollAtTopUndecided = useCallback((on: boolean) => {
+    scrollAtTopUndecidedRef.current = on;
+    sheetRef.current?.classList.toggle(GESTURE_UNDECIDED_CLASS, on);
+  }, []);
+  /** Velocity for `isCloseDirection` (drawer uses timeStamp deltas). */
+  const dragVelLastRef = useRef<{ y: number; timeStamp: number }>({ y: 0, timeStamp: 0 });
+  /** One begin/end pair per gesture — pairs with pointer capture for sheet drag (touch). */
+  const sheetDragDocTouchLockHeldRef = useRef(false);
   const heightAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const acquireSheetDragDocTouchLock = useCallback((pointerType: string) => {
+    if (pointerType !== 'touch' && pointerType !== 'pen') return;
+    if (sheetDragDocTouchLockHeldRef.current) return;
+    sheetDragDocTouchLockHeldRef.current = true;
+    beginSheetDragDocumentTouchLock();
+  }, []);
+
+  const releaseSheetDragDocTouchLock = useCallback(() => {
+    if (!sheetDragDocTouchLockHeldRef.current) return;
+    sheetDragDocTouchLockHeldRef.current = false;
+    endSheetDragDocumentTouchLock();
+  }, []);
+
+  /* Native touch guards: attach to content wrapper (often the real scroll parent, not only BottomSheetScrollable). */
+  useEffect(() => {
+    if (!hasOpened) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    let startX = 0;
+    let startY = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const deltaX = e.touches[0].clientX - startX;
+      const deltaY = e.touches[0].clientY - startY;
+      if (
+        isAtScrollBoundarySheetClose(el, scrollableEl, deltaX, deltaY) &&
+        e.cancelable
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    el.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart, { capture: true });
+      el.removeEventListener('touchmove', onTouchMove, { capture: true });
+    };
+  }, [scrollableEl, hasOpened]);
 
   useLayoutEffect(() => {
     if (effectiveSnaps.length > 0 || heightProp != null) setTranslateY(closedY);
@@ -319,55 +432,100 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
         });
         dragStartRef.current = null;
         lastMoveRef.current = null;
+        pointerDownInsideScrollableRef.current = false;
+        pointerDownAllowSheetDragRef.current = null;
+        setScrollAtTopUndecided(false);
         closeDrawer();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isTop, disableEsc, closeDrawer]);
+  }, [isTop, disableEsc, closeDrawer, setScrollAtTopUndecided]);
 
   useFocusTrap(sheetRef, isTop && hasOpened);
 
-  const cleanupDragState = useCallback((pointerId?: number) => {
-    if (hasCapturedRef.current && sheetRef.current && pointerId != null) {
-      try {
-        sheetRef.current.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore if no capture */
+  const cleanupDragState = useCallback(
+    (pointerId?: number) => {
+      releaseSheetDragDocTouchLock();
+      if (
+        (hasCapturedRef.current || scrollAtTopUndecidedRef.current) &&
+        sheetRef.current &&
+        pointerId != null
+      ) {
+        try {
+          sheetRef.current.releasePointerCapture(pointerId);
+        } catch {
+          /* ignore if no capture */
+        }
       }
-      setIsDragging(false);
-    }
-    dragStartRef.current = null;
-    lastMoveRef.current = null;
-    hasCapturedRef.current = false;
-  }, []);
+      if (hasCapturedRef.current) {
+        setIsDragging(false);
+      }
+      dragStartRef.current = null;
+      lastMoveRef.current = null;
+      hasCapturedRef.current = false;
+      pointerDownInsideScrollableRef.current = false;
+      pointerDownAllowSheetDragRef.current = null;
+      setScrollAtTopUndecided(false);
+    },
+    [releaseSheetDragDocTouchLock, setScrollAtTopUndecided]
+  );
 
   const handlePointerDownCapture = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
-      const isTouch = e.pointerType === 'touch';
-      const isInContent = contentRef.current?.contains(e.target as Node) ?? false;
-      if (isTouch && isInContent) {
-        // When inside a scroll container, defer capture until we know swipe direction (see handlePointerMove)
-        if (scrollCtxValue.isInScrollContainer(e.target as Node)) {
+      const target = e.target as Node;
+      if (contentRef.current?.contains(target)) {
+        pointerDownAllowSheetDragRef.current = {
+          allowSheetDrag: !scrollBlocksSheetPull(contentRef.current, scrollableEl),
+        };
+      } else {
+        pointerDownAllowSheetDragRef.current = { allowSheetDrag: true };
+      }
+      pointerDownInsideScrollableRef.current =
+        scrollableEl != null && scrollableEl.contains(target);
+
+      const isTouchLike = e.pointerType === 'touch' || e.pointerType === 'pen';
+      const isInContent = contentRef.current?.contains(target) ?? false;
+      if (isTouchLike && isInContent) {
+        if (isInteractiveElement(target, contentRef.current)) {
           return;
         }
-        // Don't capture over interactive elements (buttons, links, inputs) so tap/click works on touch
-        if (isInteractiveElement(e.target as Node, contentRef.current)) {
+        /* BottomSheetScrollable: mid-scroll = drawer (defer). At scroll top = capture now (WebKit pointer loss). */
+        if (scrollableEl != null && scrollableEl.contains(target)) {
+          if (scrollBlocksSheetPull(contentRef.current, scrollableEl)) {
+            return;
+          }
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            return;
+          }
+          setScrollAtTopUndecided(true);
+          acquireSheetDragDocTouchLock(e.pointerType);
           return;
         }
-        e.currentTarget.setPointerCapture(e.pointerId);
+        if (scrollBlocksSheetPull(contentRef.current, scrollableEl)) {
+          return;
+        }
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          return;
+        }
         hasCapturedRef.current = true;
         setIsDragging(true);
+        acquireSheetDragDocTouchLock(e.pointerType);
       }
     },
-    [scrollCtxValue]
+    [scrollableEl, acquireSheetDragDocTouchLock, setScrollAtTopUndecided]
   );
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
       const pointerId = e.pointerId;
+      dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
       dragStartRef.current = { y: e.clientY, sheetY: translateY, time: Date.now() };
       lastMoveRef.current = { y: e.clientY, time: Date.now() };
       const onPointerUpGlobal = (ev: PointerEvent) => {
@@ -385,7 +543,9 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragStartRef.current) return;
-      if (e.buttons === 0) {
+      /* Touch/pen often report buttons===0 on move while the finger is still down (WebKit/Android);
+       * treating that as "released" kills the drag ~300–500ms in. Only trust buttons for mouse. */
+      if (e.pointerType === 'mouse' && e.buttons === 0) {
         if (hasCapturedRef.current) {
           e.currentTarget.releasePointerCapture(e.pointerId);
           setIsDragging(false);
@@ -393,23 +553,87 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
         dragStartRef.current = null;
         lastMoveRef.current = null;
         hasCapturedRef.current = false;
+        pointerDownInsideScrollableRef.current = false;
+        pointerDownAllowSheetDragRef.current = null;
+        setScrollAtTopUndecided(false);
         return;
       }
+
+      const dtVel = e.timeStamp - dragVelLastRef.current.timeStamp;
+      const velocityY =
+        dtVel >= MIN_DT_MS ? (e.clientY - dragVelLastRef.current.y) / dtVel : 0;
+
       lastMoveRef.current = { y: e.clientY, time: Date.now() };
       const delta = e.clientY - dragStartRef.current.y;
-      const threshold = e.pointerType === 'touch' ? 1 : DRAG_THRESHOLD;
-      if (!hasCapturedRef.current && Math.abs(delta) > threshold) {
-        const target = e.target as Node;
-        if (scrollCtxValue.isInScrollContainer(target)) {
-          if (scrollCtxValue.shouldBlockGestures(target)) return;
-          if (!scrollCtxValue.canCaptureForDownSwipe(target) || delta <= 0) return;
-          e.preventDefault();
+      const threshold =
+        e.pointerType === 'touch' || e.pointerType === 'pen' ? 1 : DRAG_THRESHOLD;
+
+      if (scrollAtTopUndecidedRef.current) {
+        if (delta < -SCROLL_YIELD_PX) {
+          setScrollAtTopUndecided(false);
+          releaseSheetDragDocTouchLock();
+          try {
+            sheetRef.current?.releasePointerCapture(e.pointerId);
+          } catch {
+            /* ignore */
+          }
+          dragStartRef.current = null;
+          lastMoveRef.current = null;
+          pointerDownInsideScrollableRef.current = false;
+          pointerDownAllowSheetDragRef.current = null;
+          dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+          return;
         }
-        e.currentTarget.setPointerCapture(e.pointerId);
+        if (delta > threshold) {
+          setScrollAtTopUndecided(false);
+          hasCapturedRef.current = true;
+          setIsDragging(true);
+        } else {
+          if ((e.pointerType === 'touch' || e.pointerType === 'pen') && e.cancelable) {
+            e.preventDefault();
+          }
+          dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+          return;
+        }
+      }
+
+      if (!hasCapturedRef.current && Math.abs(delta) > threshold) {
+        if (pointerDownAllowSheetDragRef.current && !pointerDownAllowSheetDragRef.current.allowSheetDrag) {
+          dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+          return;
+        }
+        if (scrollableEl != null && pointerDownInsideScrollableRef.current) {
+          if (scrollBlocksSheetPull(contentRef.current, scrollableEl)) {
+            dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+            return;
+          }
+          const atBoundary = isAtScrollBoundarySheetClose(contentRef.current, scrollableEl, 0, delta);
+          const inClose = isCloseDirectionBottom(delta, velocityY);
+          if (!atBoundary || !inClose) {
+            dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+            return;
+          }
+          if (e.cancelable) e.preventDefault();
+        }
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+          return;
+        }
         hasCapturedRef.current = true;
         setIsDragging(true);
+        acquireSheetDragDocTouchLock(e.pointerType);
       }
-      if (!hasCapturedRef.current) return;
+      if (!hasCapturedRef.current) {
+        dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
+        return;
+      }
+      /* Keep pointer captured for the sheet: otherwise mobile browsers start native scroll/pan and steal the stream. */
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        e.preventDefault();
+      }
+      dragVelLastRef.current = { y: e.clientY, timeStamp: e.timeStamp };
       let next = dragStartRef.current.sheetY + delta;
       const min = 0;
       const max = sheetHeight + closeOffset;
@@ -425,15 +649,37 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
       }
       setTranslateY(next);
     },
-    [sheetHeight, closeOffset, effectiveSnaps, scrollCtxValue]
+    [
+      sheetHeight,
+      closeOffset,
+      effectiveSnaps,
+      scrollableEl,
+      acquireSheetDragDocTouchLock,
+      releaseSheetDragDocTouchLock,
+      setScrollAtTopUndecided,
+    ]
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (!dragStartRef.current) return;
+      if (!dragStartRef.current) {
+        pointerDownInsideScrollableRef.current = false;
+        pointerDownAllowSheetDragRef.current = null;
+        setScrollAtTopUndecided(false);
+        return;
+      }
+      releaseSheetDragDocTouchLock();
+      const hadUndecided = scrollAtTopUndecidedRef.current;
+      setScrollAtTopUndecided(false);
       const didCapture = hasCapturedRef.current;
+      if (hadUndecided || didCapture) {
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
       if (didCapture) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
         setIsDragging(false);
       }
       const last = lastMoveRef.current;
@@ -444,6 +690,8 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
       dragStartRef.current = null;
       lastMoveRef.current = null;
       hasCapturedRef.current = false;
+      pointerDownInsideScrollableRef.current = false;
+      pointerDownAllowSheetDragRef.current = null;
 
       if (!didCapture) return;
 
@@ -511,18 +759,46 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
       disableSwipeDownToClose,
       isTop,
       ctx,
+      releaseSheetDragDocTouchLock,
+      setScrollAtTopUndecided,
     ]
   );
 
-  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
-    if (hasCapturedRef.current) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-      setIsDragging(false);
-    }
+  const handlePointerCancel = useCallback(
+    (e: React.PointerEvent) => {
+      releaseSheetDragDocTouchLock();
+      const hadUndecided = scrollAtTopUndecidedRef.current;
+      const hadCapture = hasCapturedRef.current;
+      setScrollAtTopUndecided(false);
+      if (hadCapture || hadUndecided) {
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (hadCapture) {
+        setIsDragging(false);
+      }
+      dragStartRef.current = null;
+      lastMoveRef.current = null;
+      hasCapturedRef.current = false;
+      pointerDownInsideScrollableRef.current = false;
+      pointerDownAllowSheetDragRef.current = null;
+    },
+    [releaseSheetDragDocTouchLock, setScrollAtTopUndecided]
+  );
+
+  const handleLostPointerCapture = useCallback(() => {
+    releaseSheetDragDocTouchLock();
+    setScrollAtTopUndecided(false);
+    setIsDragging(false);
     dragStartRef.current = null;
     lastMoveRef.current = null;
     hasCapturedRef.current = false;
-  }, []);
+    pointerDownInsideScrollableRef.current = false;
+    pointerDownAllowSheetDragRef.current = null;
+  }, [releaseSheetDragDocTouchLock, setScrollAtTopUndecided]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -539,6 +815,7 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
     onPointerCancel: handlePointerCancel,
+    onLostPointerCapture: handleLostPointerCapture,
   };
 
   const duration = getCssVar('--bottom-sheet-duration', '0.5s');
@@ -653,7 +930,7 @@ export function BottomSheet({ descriptor, index, isTop, stackDepth }: BottomShee
               : { flex: 1, overflow: 'auto', minHeight: 0 }),
           }}
         >
-          <ScrollContainerContext.Provider value={scrollCtxValue}>
+          <ScrollContainerContext.Provider value={scrollProviderValue}>
             <Component
               {...(componentProps as object)}
               id={id}

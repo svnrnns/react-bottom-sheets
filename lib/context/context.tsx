@@ -9,6 +9,8 @@ import {
 } from '../store/store';
 import type { SheetDescriptor } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
+import { isTargetInsideSheetScrollRoot } from './sheetScrollLockRegistry';
+import { isSheetDragDocumentTouchLocked } from './sheetDragDocumentTouchLock';
 
 export const BottomSheetContext = createContext<{
   registerController: (id: string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => void;
@@ -54,12 +56,16 @@ export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodySc
     const shouldPreventScroll = (target: EventTarget | null): boolean => {
       if (!portalRef.current || !(target instanceof Node)) return true;
       if (!portalRef.current.contains(target)) return true;
-      let el: Element | null = target instanceof Element ? target : null;
+      /* BottomSheetScrollable registers here — do not block wheel/touch (overflow heuristics fail with text nodes, flex, shorthand). */
+      if (isTargetInsideSheetScrollRoot(target)) return false;
+      let el: Element | null =
+        target instanceof Element ? target : target.parentElement;
       while (el && el !== portalRef.current) {
         if (el instanceof HTMLElement) {
-          const overflowY = getComputedStyle(el).overflowY;
+          const style = getComputedStyle(el);
+          const overflowY = style.overflowY;
           if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
-            return false; // permitir scroll en este contenedor
+            return false;
           }
         }
         el = el.parentElement;
@@ -79,6 +85,20 @@ export function BottomSheetRoot({ width, disableBodyScroll: defaultDisableBodySc
       document.removeEventListener('touchmove', onTouchMove);
     };
   }, [shouldDisableBodyScroll]);
+
+  /* Independent of disableBodyScroll: while a sheet drag holds the lock, prevent document touch scrolling inside the portal (WebKit pointercancel ~500ms). */
+  useEffect(() => {
+    if (typeof document === 'undefined' || sheets.length === 0) return;
+    const onTouchMoveCapture = (e: TouchEvent) => {
+      if (!isSheetDragDocumentTouchLocked()) return;
+      if (!portalRef.current || !(e.target instanceof Node) || !portalRef.current.contains(e.target)) return;
+      e.preventDefault();
+    };
+    document.addEventListener('touchmove', onTouchMoveCapture, { capture: true, passive: false });
+    return () => {
+      document.removeEventListener('touchmove', onTouchMoveCapture, { capture: true });
+    };
+  }, [sheets.length]);
 
   const registerController = useCallback(
     (id: string, ctrl: { snapToIndex: (i: number) => void; openFully: () => void; close: () => void }) => {

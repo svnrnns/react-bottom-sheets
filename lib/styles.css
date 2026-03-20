@@ -17,7 +17,8 @@
   --bottom-sheet-close-extra-offset: 0;
   --bottom-sheet-stack-overlay-bg: rgba(0, 0, 0, 0.5);
   --bottom-sheet-drag-hitbox-extension: 8px;
-  --bottom-sheet-content-touch-action: none;
+  /* pan-y: allow vertical scroll inside BottomSheetScrollable; `none` blocks native scroll like drawer needs pan-y on .drawer-scrollable */
+  --bottom-sheet-content-touch-action: pan-y;
   --bottom-sheet-border: none;
 }
 
@@ -48,6 +49,11 @@
 
 .bottom-sheet.dragging {
   cursor: grabbing;
+}
+
+/* During sheet drag, stop pan-y on scroll content so the browser does not steal the pointer (~500ms on iOS). */
+.bottom-sheet.dragging .bottom-sheet-scrollable {
+  touch-action: none;
 }
 
 .bottom-sheet.stacked {
@@ -88,4 +94,18 @@
 
 .bottom-sheet-content {
   touch-action: var(--bottom-sheet-content-touch-action);
+}
+
+/* Mirror drawer: bottom drawer .drawer-scrollable gets pan-y so native scroll works inside touch-action:none frame. */
+.bottom-sheet-scrollable {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  min-height: 0;
+  touch-action: pan-y;
+}
+
+/* WebKit: pointer captured at scroll-top before direction known — block native pan until we commit or yield. */
+.bottom-sheet.bottom-sheet--gesture-undecided .bottom-sheet-scrollable {
+  touch-action: none;
 }
